@@ -1,0 +1,34 @@
+{
+  "id": "push-notification",
+  "name": "Push Notification",
+  "description": "Send push notifications to users via configurable backend. Supports Expo Push Notifications (React Native), with extensible architecture for other notification backends.",
+  "version": "0.1.0",
+  "author": "guangqiu86",
+  "repository": "https://github.com/guangqiu86/openclaw_push_notification",
+  "homepage": "https://github.com/guangqiu86/openclaw_push_notification",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "backendUrl": {
+        "type": "string",
+        "description": "URL of the notification backend service (e.g., https://your-api.com)"
+      },
+      "apiKey": {
+        "type": "string",
+        "description": "API key for authenticating with the backend service"
+      },
+      "defaultTitle": {
+        "type": "string",
+        "description": "Default notification title when not specified",
+        "default": "OpenClaw Agent"
+      },
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable or disable the push notification tool",
+        "default": true
+      }
+    },
+    "required": ["backendUrl"],
+    "additionalProperties": false
+  }
+}

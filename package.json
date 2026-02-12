@@ -1,0 +1,39 @@
+{
+  "name": "@openclaw/push-notification",
+  "version": "0.1.0",
+  "description": "Push notification tool for OpenClaw agents - send notifications to users when tasks complete",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "push-notification",
+    "expo",
+    "react-native"
+  ],
+  "author": "guangqiu86",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guangqiu86/openclaw_push_notification.git"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "peerDependencies": {
+    "openclaw": ">=0.1.0"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  }
+}
