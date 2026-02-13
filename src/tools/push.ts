@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import type { PushNotificationConfig, PushNotificationPayload, PushNotificationResult } from './types';
+import type { PushNotificationConfig, PushNotificationPayload, PushNotificationResult } from '../types';
 
 // Schema for tool input validation
 const PushSchema = z.object({
@@ -144,7 +144,7 @@ The notification will be delivered to the user's registered device(s).`,
         if (!response.ok) {
           let errorMessage = `HTTP ${response.status}`;
           try {
-            const errorBody = await response.json();
+            const errorBody = (await response.json()) as { error?: string; message?: string };
             errorMessage = errorBody.error || errorBody.message || errorMessage;
           } catch {
             // Response wasn't JSON, use status text
