@@ -1,4 +1,4 @@
-# @openclaw/push-notification
+# openclaw-push-notification
 
 Push notification plugin for OpenClaw agents. Enables agents to send push notifications to users when tasks complete, cron jobs trigger, or user attention is required.
 
@@ -12,7 +12,7 @@ Push notification plugin for OpenClaw agents. Enables agents to send push notifi
 ## Installation
 
 ```bash
-npm install -g @openclaw/push-notification
+npm install -g openclaw-push-notification
 ```
 
 ## Configuration
