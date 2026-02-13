@@ -1,6 +1,6 @@
 {
   "name": "openclaw-push-notification",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Push notification tool for OpenClaw agents - send notifications to users when tasks complete",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -29,7 +29,9 @@
     "openclaw": ">=0.1.0"
   },
   "openclaw": {
-    "extensions": ["./dist/index.js"]
+    "extensions": [
+      "./dist/index.js"
+    ]
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
