@@ -12,7 +12,14 @@
  */
 
 import { z } from 'zod';
-import type { PushNotificationConfig, PushNotificationPayload, PushNotificationResult } from '../types';
+import { resolvePushPluginEntry } from '../config';
+import type {
+  OpenClawAgentTool,
+  PushNotificationPayload,
+  PushNotificationResult,
+  PushPluginApiConfig,
+  ToolExecutionResult,
+} from '../types';
 
 // Schema for tool input validation
 const PushSchema = z.object({
@@ -24,34 +31,138 @@ const PushSchema = z.object({
 
 type PushInput = z.infer<typeof PushSchema>;
 
+type PushToolApi = {
+  registerTool: (
+    tool: OpenClawAgentTool<unknown, PushNotificationResult>,
+    opts?: { name?: string; names?: string[]; optional?: boolean }
+  ) => void;
+  config: PushPluginApiConfig;
+};
+
+function readErrorMessageFromBody(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') {
+    return undefined;
+  }
+  const payload = body as { error?: unknown; message?: unknown };
+  if (typeof payload.error === 'string' && payload.error.trim()) {
+    return payload.error;
+  }
+  if (typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message;
+  }
+  return undefined;
+}
+
+function formatToolText(result: PushNotificationResult): string {
+  if (result.success) {
+    return 'Push notification sent successfully.';
+  }
+  return `Push notification failed: ${result.error ?? 'Unknown error'}`;
+}
+
+async function executePush(
+  params: PushInput,
+  config: PushPluginApiConfig,
+  signal?: AbortSignal
+): Promise<PushNotificationResult> {
+  // Get plugin configuration from openclaw.json.
+  const pluginEntry = resolvePushPluginEntry(config);
+  const pluginConfig = pluginEntry?.config;
+
+  // Check if plugin is disabled at entry-level or config-level.
+  if (pluginEntry?.enabled === false || pluginConfig?.enabled === false) {
+    return {
+      success: false,
+      error: 'Push notification plugin is disabled',
+    };
+  }
+
+  // Check if plugin is configured.
+  if (!pluginConfig?.backendUrl) {
+    return {
+      success: false,
+      error: 'Push notification plugin not configured. Set plugins.entries["push-notification"].config.backendUrl in openclaw.json',
+    };
+  }
+
+  // Build the notification payload
+  const payload: PushNotificationPayload = {
+    message: params.message,
+    title: params.title || pluginConfig.defaultTitle || 'OpenClaw Agent',
+    data: params.data || {},
+    priority: params.priority,
+    // Include jobId from environment if available (set during deployment)
+    jobId: process.env.OPENCLAW_JOB_ID || process.env.JOB_ID || 'unknown',
+    // Include agent info from environment
+    agentId: process.env.OPENCLAW_AGENT_ID || process.env.AGENT_ID || 'unknown',
+    timestamp: new Date().toISOString(),
+  };
+
+  // Build headers
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add API key if configured
+  if (pluginConfig.apiKey) {
+    headers['Authorization'] = `Bearer ${pluginConfig.apiKey}`;
+  }
+
+  try {
+    // Send notification to backend
+    const backendUrl = pluginConfig.backendUrl.replace(/\/+$/, '');
+    const response = await fetch(`${backendUrl}/api/notifications/send`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal,
+    });
+
+    if (!response.ok) {
+      let errorMessage = `${response.status} ${response.statusText}`;
+      try {
+        const errorBody = (await response.json()) as unknown;
+        errorMessage = readErrorMessageFromBody(errorBody) || errorMessage;
+      } catch {
+        // Response wasn't JSON, use status text.
+      }
+
+      return {
+        success: false,
+        error: `Failed to send notification: ${errorMessage}`,
+      };
+    }
+
+    let result: unknown;
+    try {
+      result = await response.json();
+    } catch {
+      result = { success: true };
+    }
+
+    return {
+      success: true,
+      result,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      success: false,
+      error: `Failed to send notification: ${errorMessage}`,
+    };
+  }
+}
+
 /**
  * Register the push notification tool with OpenClaw
  */
 export function registerPushTool(api: {
-  registerTool: (options: {
-    tool: {
-      name: string;
-      description: string;
-      schema: {
-        type: string;
-        properties: Record<string, unknown>;
-        required: string[];
-      };
-    };
-    handler: (input: unknown) => Promise<PushNotificationResult>;
-  }) => void;
-  config: {
-    plugins?: {
-      entries?: {
-        push_notification?: {
-          config?: PushNotificationConfig;
-        };
-      };
-    };
-  };
+  registerTool: PushToolApi['registerTool'];
+  config: PushPluginApiConfig;
 }): void {
-  const tool = {
+  const tool: OpenClawAgentTool<unknown, PushNotificationResult> = {
     name: 'push',
+    label: 'Push Notification',
     description: `Send a push notification to the user. Use this tool when:
 - A requested task has completed
 - A cron job has triggered
@@ -59,7 +170,7 @@ export function registerPushTool(api: {
 - Any event that warrants notifying the user
 
 The notification will be delivered to the user's registered device(s).`,
-    schema: {
+    parameters: {
       type: 'object' as const,
       properties: {
         message: {
@@ -82,93 +193,23 @@ The notification will be delivered to the user's registered device(s).`,
         },
       },
       required: ['message'],
+      additionalProperties: false,
     },
-  };
-
-  api.registerTool({
-    tool,
-    handler: async (input: unknown): Promise<PushNotificationResult> => {
+    execute: async (
+      _toolCallId: string,
+      input: unknown,
+      signal?: AbortSignal
+    ): Promise<ToolExecutionResult<PushNotificationResult>> => {
       // Validate input
       const params = PushSchema.parse(input);
 
-      // Get plugin configuration from openclaw.json
-      const pluginConfig = api.config.plugins?.entries?.push_notification?.config;
-
-      // Check if plugin is configured
-      if (!pluginConfig?.backendUrl) {
-        return {
-          success: false,
-          error: 'Push notification plugin not configured. Set plugins.entries.push_notification.config.backendUrl in openclaw.json',
-        };
-      }
-
-      // Check if plugin is disabled
-      if (pluginConfig.enabled === false) {
-        return {
-          success: false,
-          error: 'Push notification plugin is disabled',
-        };
-      }
-
-      // Build the notification payload
-      const payload: PushNotificationPayload = {
-        message: params.message,
-        title: params.title || pluginConfig.defaultTitle || 'OpenClaw Agent',
-        data: params.data || {},
-        priority: params.priority,
-        // Include jobId from environment if available (set during deployment)
-        jobId: process.env.OPENCLAW_JOB_ID || process.env.JOB_ID || 'unknown',
-        // Include agent info from environment
-        agentId: process.env.OPENCLAW_AGENT_ID || process.env.AGENT_ID || 'unknown',
-        timestamp: new Date().toISOString(),
+      const details = await executePush(params, api.config, signal);
+      return {
+        content: [{ type: 'text', text: formatToolText(details) }],
+        details,
       };
-
-      // Build headers
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      // Add API key if configured
-      if (pluginConfig.apiKey) {
-        headers['Authorization'] = `Bearer ${pluginConfig.apiKey}`;
-      }
-
-      try {
-        // Send notification to backend
-        const response = await fetch(`${pluginConfig.backendUrl}/api/notifications/send`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          let errorMessage = `HTTP ${response.status}`;
-          try {
-            const errorBody = (await response.json()) as { error?: string; message?: string };
-            errorMessage = errorBody.error || errorBody.message || errorMessage;
-          } catch {
-            // Response wasn't JSON, use status text
-            errorMessage = `${response.status} ${response.statusText}`;
-          }
-
-          return {
-            success: false,
-            error: `Failed to send notification: ${errorMessage}`,
-          };
-        }
-
-        const result = await response.json();
-        return {
-          success: true,
-          result,
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        return {
-          success: false,
-          error: `Failed to send notification: ${errorMessage}`,
-        };
-      }
     },
-  });
+  };
+
+  api.registerTool(tool);
 }

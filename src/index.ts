@@ -5,7 +5,7 @@
  * Supports various notification backends including Expo Push Notifications for React Native.
  *
  * Installation:
- *   npm install -g @openclaw/push-notification
+ *   npm install -g openclaw-push-notification
  *
  * Configuration (in openclaw.json):
  *   {
@@ -30,35 +30,25 @@
  */
 
 import { registerPushTool } from './tools/push';
-import type { PushNotificationConfig, PushNotificationResult } from './tools';
+import { resolvePushPluginEntry } from './config';
+import type {
+  OpenClawAgentTool,
+  PushNotificationConfig,
+  PushNotificationResult,
+  PushPluginApiConfig,
+} from './types';
 
 /**
  * Plugin registration function
  * This is the entry point that OpenClaw will call
  */
 function registerPlugin(api: {
-  registerTool: (options: {
-    tool: {
-      name: string;
-      description: string;
-      schema: {
-        type: string;
-        properties: Record<string, unknown>;
-        required: string[];
-      };
-    };
-    handler: (input: unknown) => Promise<PushNotificationResult>;
-  }) => void;
+  registerTool: (
+    tool: OpenClawAgentTool<unknown, PushNotificationResult>,
+    opts?: { name?: string; names?: string[]; optional?: boolean }
+  ) => void;
   registerCli?: (setup: (program: { program: { command: (name: string) => { description: (desc: string) => { action: (handler: () => Promise<void>) => void } } } }) => void, options: { commands: string[] }) => void;
-  config: {
-    plugins?: {
-      entries?: {
-        push_notification?: {
-          config?: PushNotificationConfig;
-        };
-      };
-    };
-  };
+  config: PushPluginApiConfig;
 }): void {
   // Register the push notification tool
   registerPushTool(api);
@@ -71,15 +61,16 @@ function registerPlugin(api: {
           .command('push-notification:test')
           .description('Test push notification configuration')
           .action(async () => {
-            const config = api.config.plugins?.entries?.push_notification?.config;
+            const entry = resolvePushPluginEntry(api.config);
+            const config = entry?.config;
 
             if (!config?.backendUrl) {
               console.log('Push notification plugin is not configured.');
-              console.log('Set plugins.entries.push_notification.config.backendUrl in openclaw.json');
+              console.log('Set plugins.entries["push-notification"].config.backendUrl in openclaw.json');
               return;
             }
 
-            if (config.enabled === false) {
+            if (entry?.enabled === false || config.enabled === false) {
               console.log('Push notification plugin is disabled.');
               return;
             }
